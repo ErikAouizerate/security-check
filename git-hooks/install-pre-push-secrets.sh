@@ -121,7 +121,10 @@ mapfile -t FILES < <(git log --name-only --pretty=format: "${REVS[@]}" | sed '/^
 # 1. sensitive file names
 DENY_RE='(^|/)\.env($|\.)|\.(pem|key|p12|pfx)$|(^|/)id_(rsa|ed25519|ecdsa|dsa)$|(^|/)credentials[^/]*$|(^|/)secrets/|\.tfstate$'
 for f in "${FILES[@]}"; do
-  [ "$(basename "$f")" = ".env.example" ] && continue
+  # .env templates are safe to publish: skip .env.example and .env.<scope>.example.
+  case "$(basename "$f")" in
+    .env.example|.env.*.example) continue ;;
+  esac
   if printf '%s' "$f" | grep -Eq "$DENY_RE"; then
     echo "BLOCKED: sensitive file in outgoing commits: $f" >&2
     exit 1

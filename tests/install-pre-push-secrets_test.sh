@@ -83,6 +83,46 @@ new_case
 bash "$INSTALLER" --bogus >/dev/null 2>&1; rc=$?
 expect_rc 2 "$rc" "unknown option rejected"
 
+# --- hook behaviour: sensitive file names vs. .env templates ---
+ZERO=0000000000000000000000000000000000000000
+
+make_repo_with() { # $1 = path added in the outgoing commit; prints the repo path
+  local path="$1" repo
+  repo="$(mktemp -d "$TMP/repo.XXXXXX")"
+  git -C "$repo" init -q -b main
+  git -C "$repo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
+  mkdir -p "$repo/$(dirname "$path")"
+  printf 'X=1\n' > "$repo/$path"
+  git -C "$repo" add -A
+  git -C "$repo" -c user.email=t@t -c user.name=t commit -q -m "add $path"
+  printf '%s' "$repo"
+}
+
+run_hook_on() { # $1 = repo; runs the installed hook as git would on push
+  local repo="$1" oid
+  oid="$(git -C "$repo" rev-parse HEAD)"
+  ( cd "$repo" && printf 'refs/heads/main %s refs/heads/main %s\n' "$oid" "$ZERO" \
+      | bash "$HOOK" origin placeholder ) 2>&1
+}
+
+# a real .env in an outgoing commit is blocked
+new_case
+bash "$INSTALLER" >/dev/null 2>&1
+out="$(run_hook_on "$(make_repo_with api/.env)")"; rc=$?
+expect_rc 1 "$rc" "outgoing api/.env is blocked"
+expect_grep "BLOCKED: sensitive file" "$out"
+
+# .env templates are safe to publish and must not be blocked
+new_case
+bash "$INSTALLER" >/dev/null 2>&1
+for tpl in api/.env.example api/.env.prod.example api/.env.local.example; do
+  out="$(run_hook_on "$(make_repo_with "$tpl")")"; rc=$?
+  expect_rc 0 "$rc" "outgoing $tpl is allowed"
+  if printf '%s' "$out" | grep -q "BLOCKED"; then
+    echo "FAIL: $tpl was blocked"; FAILURES=$((FAILURES + 1)); else
+    echo "ok: $tpl is not blocked"; fi
+done
+
 echo
 if [ "$FAILURES" -eq 0 ]; then echo "PASS"; exit 0; fi
 echo "$FAILURES failure(s)"; exit 1
