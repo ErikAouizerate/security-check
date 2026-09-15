@@ -124,7 +124,9 @@ a path inside the container (mount the file there).
 
 - `.github/workflows/build-image.yml` builds and pushes the image to GHCR.
 - `.github/workflows/security-audit.yml` runs the audit and uploads the SARIF
-  reports to GitHub code scanning.
+  reports to GitHub code scanning. It is self-contained (inlines its
+  `docker run`, no `Makefile` needed), so it can be copied into another
+  repository as-is.
 
 `security-audit` runs the published `latest` image (scheduled and default-branch
 runs). PR builds are not pushed to GHCR, so a pull request audits the last

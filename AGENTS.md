@@ -6,8 +6,10 @@
   Checkov, OSV-Scanner (pinned versions, binaries copied from official images).
 - `audit`: bash wrapper, image entrypoint, dispatching the tools and applying
   the exit policy.
-- `Makefile`: local entry point, reused by CI.
+- `Makefile`: local entry point only; CI does not use it.
 - `.github/workflows/`: GitHub Actions (build/push the image, run the audit).
+  `security-audit.yml` is self-contained (inlines its `docker run`) so it can be
+  copied into another repository without the `Makefile`.
 
 ## Global conventions (content copied from Basic Memory, project "main")
 

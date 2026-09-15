@@ -206,7 +206,9 @@ Targets:
 - `secrets`, `sast`, `iac`, `sca` — run one category.
 - `clean` — remove `$(REPORTS_DIR)` and the local image.
 
-CI reuses these targets so the invocation logic lives in exactly one place.
+The `security-audit` workflow does not reuse the Makefile: it inlines the
+equivalent `docker run`, so the workflow is self-contained and can be copied into
+another repository without shipping the `Makefile`.
 
 ## CI (GitHub Actions)
 
@@ -225,8 +227,9 @@ CI reuses these targets so the invocation logic lives in exactly one place.
 - Permissions: `contents: read`, `packages: read`, `security-events: write`.
 - Steps: checkout with `fetch-depth: 0` (Gitleaks needs history); log in to
   GHCR; pull the published `:latest` image (default branch and scheduled runs;
-  PRs audit the last published image because PR builds are not pushed); run
-  `make audit`; upload each SARIF via
+  PRs audit the last published image because PR builds are not pushed); run the
+  audit through an inline `docker run ... audit all` (self-contained: the
+  audited repository needs no `Makefile`); upload each SARIF via
   `github/codeql-action/upload-sarif` with a distinct `category`; upload the
   reports directory as an artifact. The wrapper's graded exit codes decide
   whether the job fails.
