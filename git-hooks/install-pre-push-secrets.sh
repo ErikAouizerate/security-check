@@ -6,14 +6,19 @@
 #
 # Usage:
 #   ./install-pre-push-secrets.sh [--dry-run]
+#   ./install-pre-push-secrets.sh --force [--dry-run]
 #   ./install-pre-push-secrets.sh --uninstall [--dry-run]
 #
-# Bypass at push time: SKIP_SECURITY=1 or `git push --no-verify`.
+# Idempotent: if this guardrail is already installed it is left untouched
+# (use --force to reinstall). Bypass at push time: SKIP_SECURITY=1 or
+# `git push --no-verify`.
 set -euo pipefail
 
 HOOKS_DIR="${HOOKS_DIR:-$HOME/.config/git-hooks}"
 HOOK="$HOOKS_DIR/pre-push"
+HOOK_MARKER='pre-push secret guardrail (secrets-only)'
 DRY_RUN=0
+FORCE=0
 ACTION=install
 
 usage() {
@@ -22,10 +27,11 @@ Usage: install-pre-push-secrets.sh [OPTIONS]
 
 Installs a global, secrets-only git pre-push hook (gitleaks + sensitive file
 names) through core.hooksPath. Replaces the existing global hook, keeping a
-timestamped backup.
+timestamped backup. If the guardrail is already installed, it is left as-is.
 
 Options:
   --dry-run     Print actions without changing anything.
+  --force       Reinstall even when the guardrail is already installed.
   --uninstall   Restore the latest backup, or remove the hook and unset
                 core.hooksPath when no backup exists.
   -h, --help    Show this help.
@@ -35,12 +41,21 @@ USAGE
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
+    --force) FORCE=1 ;;
     --uninstall) ACTION=uninstall ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
   shift
 done
+
+is_installed() {
+  local current
+  current="$(git config --global --get core.hooksPath 2>/dev/null || true)"
+  [ "$current" = "$HOOKS_DIR" ] \
+    && [ -x "$HOOK" ] \
+    && grep -qF "$HOOK_MARKER" "$HOOK" 2>/dev/null
+}
 
 run() {
   if [ "$DRY_RUN" = 1 ]; then
@@ -51,6 +66,11 @@ run() {
 }
 
 install_hook() {
+  if [ "$FORCE" != 1 ] && is_installed; then
+    echo "Already installed: $HOOK (core.hooksPath -> $HOOKS_DIR); use --force to reinstall"
+    return 0
+  fi
+
   if [ "$DRY_RUN" = 1 ]; then
     echo "DRY-RUN: would write secrets-only pre-push hook to $HOOK"
     [ -f "$HOOK" ] && echo "DRY-RUN: would backup existing hook to $HOOK.backup-<timestamp>"

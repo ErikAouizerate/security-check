@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# security-check — audit the current (or a given) directory from anywhere.
+# Runs the published audit image; reports are written outside the target.
+set -uo pipefail
+
+IMAGE="${IMAGE:-ghcr.io/erikaouizerate/security-check:latest}"
+CACHE_DIR="${CACHE_DIR:-$HOME/.cache/security-audit}"
+REPORTS_ROOT="${REPORTS_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/security-check/reports}"
+
+CATEGORIES="all secrets sast iac sca"
+CATEGORY="all"
+TARGET=""
+REPORTS_DIR="${REPORTS_DIR:-}"
+
+log() { printf '==> %s\n' "$*" >&2; }
+die() { printf 'security-check: %s\n' "$*" >&2; exit 2; }
+
+usage() {
+  cat >&2 <<EOF
+usage: security-check [CATEGORY] [TARGET]
+       security-check [TARGET]
+
+Audit TARGET (default: the current directory) with the security-check image.
+
+  CATEGORY   one of: $CATEGORIES (default: all)
+
+Options:
+  --image IMAGE   container image to run (default: \$IMAGE, the GHCR image)
+  --reports DIR   report directory (default: \$REPORTS_ROOT/<project>)
+  -h, --help      show this help
+
+Environment:
+  IMAGE, CACHE_DIR, REPORTS_ROOT, REPORTS_DIR,
+  FAIL_ON_SECRETS, FAIL_ON_SAST, FAIL_ON_IAC, FAIL_ON_SCA
+EOF
+}
+
+POSITIONAL=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --image) [ $# -ge 2 ] || die "--image needs a value"; IMAGE="$2"; shift 2 ;;
+    --reports) [ $# -ge 2 ] || die "--reports needs a value"; REPORTS_DIR="$2"; shift 2 ;;
+    --) shift; while [ $# -gt 0 ]; do POSITIONAL+=("$1"); shift; done ;;
+    -*) die "unknown option: $1" ;;
+    *) POSITIONAL+=("$1"); shift ;;
+  esac
+done
+
+for arg in ${POSITIONAL[@]+"${POSITIONAL[@]}"}; do
+  case " $CATEGORIES " in
+    *" $arg "*) CATEGORY="$arg"; continue ;;
+  esac
+  if [ -z "$TARGET" ]; then
+    TARGET="$arg"
+  else
+    die "unexpected argument: $arg"
+  fi
+done
+
+TARGET="${TARGET:-$PWD}"
+[ -d "$TARGET" ] || die "target is not a directory: $TARGET"
+TARGET="$(cd "$TARGET" && pwd)"
+
+command -v docker >/dev/null 2>&1 || die "docker is required but not found"
+
+if [ -z "$REPORTS_DIR" ]; then
+  REPORTS_DIR="$REPORTS_ROOT/$(basename "$TARGET")"
+fi
+mkdir -p "$REPORTS_DIR" "$CACHE_DIR" || die "cannot create report/cache directories"
+REPORTS_DIR="$(cd "$REPORTS_DIR" && pwd)"
+
+case "$CATEGORY" in
+  all|secrets)
+    if [ ! -e "$TARGET/.git" ]; then
+      log "warning: $TARGET is not a Git repository; gitleaks git needs history"
+    fi
+    ;;
+esac
+
+log "target:  $TARGET"
+log "image:   $IMAGE"
+log "reports: $REPORTS_DIR"
+
+docker run --rm \
+  -u "$(id -u):$(id -g)" \
+  -e FAIL_ON_SECRETS -e FAIL_ON_SAST -e FAIL_ON_IAC -e FAIL_ON_SCA \
+  -e REPORTS_DIR=/reports \
+  -v "$TARGET:/workspace:ro" \
+  -w /workspace \
+  -v "$REPORTS_DIR:/reports" \
+  -v "$CACHE_DIR:/cache" \
+  "$IMAGE" audit "$CATEGORY"
+rc=$?
+
+log "reports: $REPORTS_DIR"
+exit "$rc"

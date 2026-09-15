@@ -1,5 +1,6 @@
 .git
 .github
+bin
 docs
 tests
 security-reports

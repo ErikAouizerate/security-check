@@ -57,6 +57,38 @@ directory, so reports land in `/path/to/project/security-reports/`. Add that
 directory to the target project's `.gitignore`, or use the read-only recipe
 below.
 
+#### The installed wrapper: audit from any folder
+
+Install the wrapper once, then run it from inside the project you want to audit;
+the current directory becomes the target automatically.
+
+```bash
+make install                     # -> ~/.local/bin/security-check (+ sec alias)
+make install PREFIX=/usr/local   # system-wide
+```
+
+`make install` also installs the global, secrets-only `pre-push` hook through
+`git-hooks/install-pre-push-secrets.sh` (in addition to the wrapper). It is
+idempotent: if the guardrail is already installed it is left untouched. Use the
+installer directly with `--force` to reinstall, `--dry-run` to preview, or
+`--uninstall` to remove it.
+
+```bash
+security-check                   # all categories, current directory
+security-check sast              # one category: all|secrets|sast|iac|sca
+security-check all /path/project # explicit target
+security-check --help
+sec sca                          # short alias
+```
+
+Reports are written **outside** the audited folder, under
+`~/.local/share/security-check/reports/<project>/` (override with `--reports DIR`
+or `REPORTS_DIR=...`), so the target needs no `.gitignore` change. The target is
+mounted read-only at `/workspace`. Select the image with `--image` or `IMAGE`
+(default: the published GHCR image; use `IMAGE=security-check:local` for a local
+build). The `FAIL_ON_*` variables are forwarded, so the exit policy is the same
+as `make`.
+
 The `secrets` category runs `gitleaks git`, so the target must be a Git
 repository (it scans the history). For a non-Git directory, run Gitleaks in
 directory mode through the wrapper's verbatim passthrough:

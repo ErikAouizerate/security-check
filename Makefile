@@ -4,6 +4,7 @@ IMAGE        ?= $(LOCAL_IMAGE)
 REPORTS_DIR  ?= security-reports
 CACHE_DIR    ?= $(HOME)/.cache/security-audit
 TARGET       ?= $(CURDIR)
+PREFIX       ?= $(HOME)/.local
 
 DOCKER_RUN = docker run --rm \
 	-u "$$(id -u):$$(id -g)" \
@@ -13,7 +14,7 @@ DOCKER_RUN = docker run --rm \
 	-w /workspace \
 	$(IMAGE)
 
-.PHONY: help build pull audit secrets sast iac sca clean
+.PHONY: help build pull install install-hook audit secrets sast iac sca clean
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -27,6 +28,15 @@ build: ## Build the image locally (amd64)
 
 pull: ## Pull the pinned image from GHCR
 	docker pull $(GHCR_IMAGE)
+
+install-hook: ## Install the global secrets-only pre-push hook (idempotent)
+	git-hooks/install-pre-push-secrets.sh
+
+install: install-hook ## Install the wrapper, the sec alias and the pre-push hook
+	install -d "$(PREFIX)/bin"
+	install -m 0755 bin/security-check "$(PREFIX)/bin/security-check"
+	ln -sf security-check "$(PREFIX)/bin/sec"
+	@echo "Installed $(PREFIX)/bin/security-check (alias: sec)"
 
 audit: $(CACHE_DIR) ## Run the full audit
 	$(DOCKER_RUN) audit all
