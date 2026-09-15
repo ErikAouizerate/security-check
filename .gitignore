@@ -1,0 +1,9 @@
+# security audit reports — generated locally
+security-reports/
+
+# superpowers working artifacts — generated locally, never committed
+.superpowers/
+docs/superpowers/plans/
+
+# Docker
+*.local

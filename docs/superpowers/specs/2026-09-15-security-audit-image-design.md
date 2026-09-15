@@ -174,8 +174,10 @@ leaving root-owned report files, and to let tools write caches:
 - `git config --system --add safe.directory '*'` is set in the image, to avoid
   Git "dubious ownership" errors when scanning a mounted repository owned by
   another UID.
-- A named volume `security-audit-cache` is mounted at `/cache` so downloaded
-  data (Trivy DB, OpenGrep rules) is reused across runs.
+- A host cache directory (`$(HOME)/.cache/security-audit` by default) is
+  bind-mounted at `/cache`, so data downloaded by the tools (Trivy DB, OpenGrep
+  rules) is reused across runs and remains owned by the host user (a named volume
+  would be created root-owned and break `-u`).
 
 ## Makefile
 
