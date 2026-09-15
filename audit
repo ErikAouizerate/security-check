@@ -85,10 +85,10 @@ case "${1:-}" in
   sca)     run_sca;     rc=$?; grade "$rc" "$FAIL_ON_SCA";     exit $? ;;
   all)
     rc=0
-    run_secrets; grade $? "$FAIL_ON_SECRETS" || rc=1
-    run_sast;    grade $? "$FAIL_ON_SAST"    || rc=1
-    run_iac;     grade $? "$FAIL_ON_IAC"     || rc=1
-    run_sca;     grade $? "$FAIL_ON_SCA"     || rc=1
+    run_secrets; grade $? "$FAIL_ON_SECRETS"; g=$?; [ "$g" -gt "$rc" ] && rc=$g
+    run_sast;    grade $? "$FAIL_ON_SAST";    g=$?; [ "$g" -gt "$rc" ] && rc=$g
+    run_iac;     grade $? "$FAIL_ON_IAC";     g=$?; [ "$g" -gt "$rc" ] && rc=$g
+    run_sca;     grade $? "$FAIL_ON_SCA";     g=$?; [ "$g" -gt "$rc" ] && rc=$g
     exit "$rc"
     ;;
   ""|-h|--help) usage; exit 0 ;;

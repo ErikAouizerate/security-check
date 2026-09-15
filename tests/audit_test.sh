@@ -98,6 +98,11 @@ new_case
 STUB_RC_GITLEAKS=1 bash "$AUDIT" all; rc=$?
 expect_rc 1 "$rc" "all with secrets findings exits 1"
 
+# all: tool error (>1) propagates
+new_case
+STUB_RC_GITLEAKS=128 bash "$AUDIT" all; rc=$?
+expect_rc 128 "$rc" "all propagates tool errors (>1)"
+
 echo
 if [ "$FAILURES" -eq 0 ]; then echo "PASS"; exit 0; fi
 echo "$FAILURES failure(s)"; exit 1
