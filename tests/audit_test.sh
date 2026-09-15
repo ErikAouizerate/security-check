@@ -71,10 +71,25 @@ new_case
 STUB_RC_OSV_SCANNER=1 bash "$AUDIT" sca; rc=$?
 expect_rc 1 "$rc" "sca blocks on findings"
 
+# sca: non-blocking when disabled
+new_case
+FAIL_ON_SCA=0 STUB_RC_OSV_SCANNER=1 bash "$AUDIT" sca; rc=$?
+expect_rc 0 "$rc" "sca non-blocking when FAIL_ON_SCA=0"
+
+# sca: osv-scanner exit 128 means "no packages found", not an error
+new_case
+STUB_RC_OSV_SCANNER=128 bash "$AUDIT" sca; rc=$?
+expect_rc 0 "$rc" "sca treats osv-scanner rc=128 as informational"
+
 # iac: non-blocking by default
 new_case
 STUB_RC_CHECKOV=1 bash "$AUDIT" iac; rc=$?
 expect_rc 0 "$rc" "iac non-blocking by default"
+
+# iac: blocking when enabled
+new_case
+FAIL_ON_IAC=1 STUB_RC_CHECKOV=1 bash "$AUDIT" iac; rc=$?
+expect_rc 1 "$rc" "iac blocks when FAIL_ON_IAC=1"
 
 # unknown subcommand is executed verbatim
 new_case
@@ -88,10 +103,19 @@ new_case
 FAIL_ON_SAST=0 STUB_RC_OPENGREP=128 bash "$AUDIT" sast; rc=$?
 expect_rc 128 "$rc" "tool error (>1) propagates"
 
-# all: only non-blocking findings -> exit 0
+# all: only non-blocking findings -> exit 0, every report requested
 new_case
-STUB_RC_OPENGREP=1 bash "$AUDIT" all; rc=$?
+STUB_RC_OPENGREP=1 bash "$AUDIT" all 2>>"$STUB_LOG"; rc=$?
 expect_rc 0 "$rc" "all with only sast findings exits 0"
+for report in gitleaks.sarif opengrep.sarif checkov.sarif \
+              trivy-config.sarif osv.sarif trivy-fs.sarif; do
+  expect_log_contains "$report"
+done
+
+# all: osv-scanner rc=128 alone does not fail the run
+new_case
+STUB_RC_OSV_SCANNER=128 bash "$AUDIT" all; rc=$?
+expect_rc 0 "$rc" "all treats osv-scanner rc=128 as informational"
 
 # all: blocking findings -> exit 1
 new_case
@@ -102,6 +126,15 @@ expect_rc 1 "$rc" "all with secrets findings exits 1"
 new_case
 STUB_RC_GITLEAKS=128 bash "$AUDIT" all; rc=$?
 expect_rc 128 "$rc" "all propagates tool errors (>1)"
+
+# usage: no argument and --help both succeed
+new_case
+bash "$AUDIT" >/dev/null 2>&1; rc=$?
+expect_rc 0 "$rc" "no argument prints usage and exits 0"
+
+new_case
+bash "$AUDIT" --help >/dev/null 2>&1; rc=$?
+expect_rc 0 "$rc" "--help prints usage and exits 0"
 
 echo
 if [ "$FAILURES" -eq 0 ]; then echo "PASS"; exit 0; fi
