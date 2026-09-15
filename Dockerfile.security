@@ -34,8 +34,7 @@ COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 COPY --from=osv /root/osv-scanner /usr/local/bin/osv-scanner
 COPY --from=opengrep /usr/local/bin/opengrep /usr/local/bin/opengrep
 
-COPY audit /usr/local/bin/audit
-RUN chmod +x /usr/local/bin/audit
+COPY --chmod=0755 audit /usr/local/bin/audit
 
 # Writable cache/home for an arbitrary UID (host user via -u), and git trust for
 # bind-mounted repositories owned by another UID.

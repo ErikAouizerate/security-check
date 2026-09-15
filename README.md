@@ -15,8 +15,10 @@ A single Docker image bundling the security-audit toolchain, usable locally via
 
 All binaries are copied from the tools' official images during the build
 (multi-stage), except OpenGrep which has no official image: its official
-standalone binary is downloaded and verified against a pinned sha256. The build
-is therefore reproducible and involves no runtime install script.
+standalone binary is downloaded and verified against a pinned sha256. Checkov,
+a Python application rather than a standalone binary, is provided by its
+official image used as the final build stage (base). The build is therefore
+reproducible and involves no runtime install script.
 
 ## Local usage
 
@@ -58,6 +60,10 @@ Override with `FAIL_ON_SECRETS`, `FAIL_ON_SCA`, `FAIL_ON_SAST`, `FAIL_ON_IAC`
 - `.github/workflows/build-image.yml` builds and pushes the image to GHCR.
 - `.github/workflows/security-audit.yml` runs the audit and uploads the SARIF
   reports to GitHub code scanning.
+
+`security-audit` runs the published `latest` image (scheduled and default-branch
+runs). PR builds are not pushed to GHCR, so a pull request audits the last
+published image rather than its own build.
 
 See `docs/superpowers/specs/2026-09-15-security-audit-image-design.md` for the
 design.

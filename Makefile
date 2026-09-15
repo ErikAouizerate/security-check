@@ -6,6 +6,7 @@ CACHE_DIR    ?= $(HOME)/.cache/security-audit
 
 DOCKER_RUN = docker run --rm \
 	-u "$$(id -u):$$(id -g)" \
+	-e FAIL_ON_SECRETS -e FAIL_ON_SAST -e FAIL_ON_IAC -e FAIL_ON_SCA \
 	-v "$(CURDIR):/workspace" \
 	-v "$(CACHE_DIR):/cache" \
 	-w /workspace \
@@ -42,5 +43,5 @@ sca: $(CACHE_DIR) ## Run dependency scanning (OSV-Scanner + trivy fs)
 	$(DOCKER_RUN) audit sca
 
 clean: ## Remove reports and the local image
-	rm -rf $(REPORTS_DIR)
+	rm -rf "$(REPORTS_DIR)"
 	-docker rmi $(LOCAL_IMAGE)

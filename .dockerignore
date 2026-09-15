@@ -3,8 +3,5 @@
 docs
 tests
 security-reports
-README.md
-INSTRUCTIONS.md
-AGENTS.md
 Makefile
 *.md

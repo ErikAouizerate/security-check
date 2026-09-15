@@ -184,8 +184,10 @@ leaving root-owned report files, and to let tools write caches:
 Variables:
 
 - `IMAGE ?= ghcr.io/erikaouizerate/security-check:latest` (pull target), and a
-  local build tag `security-check:local`. CI overrides `IMAGE` with the
-  immutable `sha-<short>` tag for reproducibility.
+  local build tag `security-check:local`. The audit CI job runs the published
+  `:latest` image (default branch and scheduled runs). PR runs audit the last
+  published image, because PR builds are not pushed to GHCR, so no per-PR
+  immutable tag is available to the audit job.
 - `REPORTS_DIR ?= security-reports`
 - Common run prefix: `docker run --rm -u $(id -u):$(id -g) -e HOME=/cache
   -v $(CURDIR):/workspace -w /workspace -v security-audit-cache:/cache`.
@@ -216,7 +218,9 @@ CI reuses these targets so the invocation logic lives in exactly one place.
 - Triggers: `pull_request`, `push` to `main`, weekly `schedule`.
 - Permissions: `contents: read`, `packages: read`, `security-events: write`.
 - Steps: checkout with `fetch-depth: 0` (Gitleaks needs history); log in to
-  GHCR; pull the pinned image; run `make audit`; upload each SARIF via
+  GHCR; pull the published `:latest` image (default branch and scheduled runs;
+  PRs audit the last published image because PR builds are not pushed); run
+  `make audit`; upload each SARIF via
   `github/codeql-action/upload-sarif` with a distinct `category`; upload the
   reports directory as an artifact. The wrapper's graded exit codes decide
   whether the job fails.
