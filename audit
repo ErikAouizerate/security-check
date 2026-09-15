@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# audit — dispatch the bundled security tools and apply the exit policy.
+set -uo pipefail
+
+REPORTS_DIR="${REPORTS_DIR:-/workspace/security-reports}"
+FAIL_ON_SECRETS="${FAIL_ON_SECRETS:-1}"
+FAIL_ON_SAST="${FAIL_ON_SAST:-0}"
+FAIL_ON_IAC="${FAIL_ON_IAC:-0}"
+FAIL_ON_SCA="${FAIL_ON_SCA:-1}"
+
+log() { printf '==> %s\n' "$*" >&2; }
+
+usage() {
+  cat >&2 <<'EOF'
+usage: audit <secrets|sast|iac|sca|all|--help>
+       audit <command> [args]   # any unknown command is executed verbatim
+EOF
+}
+
+# grade <raw-exit-code> <fail-flag>
+# 0 findings -> 0 | 1 finding -> 1 if blocking else 0 | >1 error -> propagated
+grade() {
+  local rc="$1" fail="$2"
+  if [ "$rc" -eq 0 ]; then return 0; fi
+  if [ "$rc" -eq 1 ]; then
+    if [ "$fail" = "1" ]; then return 1; else return 0; fi
+  fi
+  return "$rc"
+}
+
+# worst <rc...> : highest code, errors (>1) taking precedence over findings (1).
+worst() {
+  local max=0 rc
+  for rc in "$@"; do
+    if [ "$rc" -gt 1 ]; then return "$rc"; fi
+    if [ "$rc" -eq 1 ]; then max=1; fi
+  done
+  return "$max"
+}
+
+run_secrets() {
+  log "secrets: gitleaks"
+  gitleaks git --report-format sarif \
+    --report-path "$REPORTS_DIR/gitleaks.sarif" --exit-code 1 .
+}
+
+run_sast() {
+  log "sast: opengrep"
+  opengrep scan --config=auto --error \
+    --sarif --output "$REPORTS_DIR/opengrep.sarif" .
+}
+
+run_iac() {
+  log "iac: checkov"
+  checkov -d . --output sarif --output-file-path "$REPORTS_DIR"
+  local checkov_rc=$?
+  if [ -f "$REPORTS_DIR/results_sarif.sarif" ]; then
+    mv -f "$REPORTS_DIR/results_sarif.sarif" "$REPORTS_DIR/checkov.sarif"
+  fi
+  log "iac: trivy config"
+  trivy config --format sarif --output "$REPORTS_DIR/trivy-config.sarif" \
+    --exit-code 1 .
+  local trivy_rc=$?
+  worst "$checkov_rc" "$trivy_rc"
+}
+
+run_sca() {
+  log "sca: osv-scanner"
+  osv-scanner scan source --recursive --format sarif \
+    --output-file "$REPORTS_DIR/osv.sarif" .
+  local osv_rc=$?
+  log "sca: trivy fs"
+  trivy fs --format sarif --output "$REPORTS_DIR/trivy-fs.sarif" \
+    --exit-code 1 --severity HIGH,CRITICAL .
+  local trivy_rc=$?
+  worst "$osv_rc" "$trivy_rc"
+}
+
+mkdir -p "$REPORTS_DIR"
+
+case "${1:-}" in
+  secrets) run_secrets; rc=$?; grade "$rc" "$FAIL_ON_SECRETS"; exit $? ;;
+  sast)    run_sast;    rc=$?; grade "$rc" "$FAIL_ON_SAST";    exit $? ;;
+  iac)     run_iac;     rc=$?; grade "$rc" "$FAIL_ON_IAC";     exit $? ;;
+  sca)     run_sca;     rc=$?; grade "$rc" "$FAIL_ON_SCA";     exit $? ;;
+  all)
+    rc=0
+    run_secrets; grade $? "$FAIL_ON_SECRETS" || rc=1
+    run_sast;    grade $? "$FAIL_ON_SAST"    || rc=1
+    run_iac;     grade $? "$FAIL_ON_IAC"     || rc=1
+    run_sca;     grade $? "$FAIL_ON_SCA"     || rc=1
+    exit "$rc"
+    ;;
+  ""|-h|--help) usage; exit 0 ;;
+  *) exec "$@" ;;
+esac
