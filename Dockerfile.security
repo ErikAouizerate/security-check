@@ -1,0 +1,50 @@
+# syntax=docker/dockerfile:1
+
+# Pinned tool versions (no :latest).
+ARG GITLEAKS_VERSION=v8.30.1
+ARG TRIVY_VERSION=0.74.0
+ARG OSV_SCANNER_VERSION=v2.6.0
+ARG CHECKOV_VERSION=3.3.17
+ARG OPENGREP_VERSION=v1.30.0
+
+# Official images whose binaries we copy (no installs at run time).
+FROM ghcr.io/gitleaks/gitleaks:${GITLEAKS_VERSION} AS gitleaks
+FROM aquasec/trivy:${TRIVY_VERSION} AS trivy
+FROM ghcr.io/google/osv-scanner:${OSV_SCANNER_VERSION} AS osv
+
+# OpenGrep has no official image: fetch its official standalone binary
+# (glibc/manylinux) and verify it against a pinned checksum.
+FROM debian:bookworm-slim AS opengrep
+ARG OPENGREP_VERSION
+ARG OPENGREP_SHA256=35779bdd72e92129c8df2a77f0c55e8c08356801ea92591ef32108d6b28d564c
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL -o /usr/local/bin/opengrep \
+      "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_x86" \
+    && echo "${OPENGREP_SHA256}  /usr/local/bin/opengrep" | sha256sum -c - \
+    && chmod +x /usr/local/bin/opengrep
+
+# Final base: official Checkov image (Debian python:3.11-slim + checkov, helm,
+# kustomize). Avoids any pip or script install at build or run time.
+FROM bridgecrew/checkov:${CHECKOV_VERSION} AS final
+
+COPY --from=gitleaks /usr/bin/gitleaks /usr/local/bin/gitleaks
+COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
+COPY --from=osv /root/osv-scanner /usr/local/bin/osv-scanner
+COPY --from=opengrep /usr/local/bin/opengrep /usr/local/bin/opengrep
+
+COPY audit /usr/local/bin/audit
+RUN chmod +x /usr/local/bin/audit
+
+# Writable cache/home for an arbitrary UID (host user via -u), and git trust for
+# bind-mounted repositories owned by another UID.
+ENV HOME=/cache \
+    XDG_CACHE_HOME=/cache \
+    TRIVY_CACHE_DIR=/cache/trivy
+RUN mkdir -p /cache && chmod 1777 /cache \
+    && git config --system --add safe.directory '*'
+
+WORKDIR /workspace
+ENTRYPOINT ["audit"]
+CMD ["all"]
