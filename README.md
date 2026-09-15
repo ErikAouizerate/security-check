@@ -71,7 +71,9 @@ make install PREFIX=/usr/local   # system-wide
 `git-hooks/install-pre-push-secrets.sh` (in addition to the wrapper). It is
 idempotent: if the guardrail is already installed it is left untouched. Use the
 installer directly with `--force` to reinstall, `--dry-run` to preview, or
-`--uninstall` to remove it.
+`--uninstall` to remove it. The hook is **fail-closed**: if `gitleaks` is missing
+or fails, the push is blocked instead of silently skipping the secret scan.
+Bypass explicitly with `SKIP_SECURITY=1` or `git push --no-verify`.
 
 ```bash
 security-check                   # all categories, current directory

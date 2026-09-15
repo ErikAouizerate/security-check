@@ -98,11 +98,17 @@ make_repo_with() { # $1 = path added in the outgoing commit; prints the repo pat
   printf '%s' "$repo"
 }
 
-run_hook_on() { # $1 = repo; runs the installed hook as git would on push
+run_hook_on() { # $1 = repo; $2 = optional PATH override; runs the hook as git would on push
   local repo="$1" oid
   oid="$(git -C "$repo" rev-parse HEAD)"
   ( cd "$repo" && printf 'refs/heads/main %s refs/heads/main %s\n' "$oid" "$ZERO" \
-      | bash "$HOOK" origin placeholder ) 2>&1
+      | PATH="${2:-$PATH}" bash "$HOOK" origin placeholder ) 2>&1
+}
+
+stub_gitleaks() { # $1 = exit code the stub must return
+  mkdir -p "$HOME/.local/bin"
+  printf '#!/usr/bin/env bash\nexit %s\n' "$1" > "$HOME/.local/bin/gitleaks"
+  chmod +x "$HOME/.local/bin/gitleaks"
 }
 
 # a real .env in an outgoing commit is blocked
@@ -112,16 +118,40 @@ out="$(run_hook_on "$(make_repo_with api/.env)")"; rc=$?
 expect_rc 1 "$rc" "outgoing api/.env is blocked"
 expect_grep "BLOCKED: sensitive file" "$out"
 
-# .env templates are safe to publish and must not be blocked
+# .env templates and frontend dev defaults are safe to publish
 new_case
 bash "$INSTALLER" >/dev/null 2>&1
-for tpl in api/.env.example api/.env.prod.example api/.env.local.example; do
+stub_gitleaks 0
+for tpl in api/.env.example api/.env.prod.example api/.env.local.example webapp/.env.development; do
   out="$(run_hook_on "$(make_repo_with "$tpl")")"; rc=$?
   expect_rc 0 "$rc" "outgoing $tpl is allowed"
   if printf '%s' "$out" | grep -q "BLOCKED"; then
     echo "FAIL: $tpl was blocked"; FAILURES=$((FAILURES + 1)); else
     echo "ok: $tpl is not blocked"; fi
 done
+
+# a leak found by gitleaks is blocked
+new_case
+bash "$INSTALLER" >/dev/null 2>&1
+stub_gitleaks 2
+out="$(run_hook_on "$(make_repo_with src/config.txt)")"; rc=$?
+expect_rc 1 "$rc" "gitleaks leak blocks"
+expect_grep "BLOCKED: gitleaks found secrets" "$out"
+
+# a failing gitleaks must not fail open
+new_case
+bash "$INSTALLER" >/dev/null 2>&1
+stub_gitleaks 1
+out="$(run_hook_on "$(make_repo_with src/config.txt)")"; rc=$?
+expect_rc 1 "$rc" "gitleaks error blocks (no fail-open)"
+expect_grep "BLOCKED: gitleaks failed" "$out"
+
+# a missing gitleaks must not fail open
+new_case
+bash "$INSTALLER" >/dev/null 2>&1
+out="$(run_hook_on "$(make_repo_with src/config.txt)" /usr/bin:/bin)"; rc=$?
+expect_rc 1 "$rc" "missing gitleaks blocks (no fail-open)"
+expect_grep "BLOCKED: gitleaks not found" "$out"
 
 echo
 if [ "$FAILURES" -eq 0 ]; then echo "PASS"; exit 0; fi

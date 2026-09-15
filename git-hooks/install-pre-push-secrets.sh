@@ -121,9 +121,11 @@ mapfile -t FILES < <(git log --name-only --pretty=format: "${REVS[@]}" | sed '/^
 # 1. sensitive file names
 DENY_RE='(^|/)\.env($|\.)|\.(pem|key|p12|pfx)$|(^|/)id_(rsa|ed25519|ecdsa|dsa)$|(^|/)credentials[^/]*$|(^|/)secrets/|\.tfstate$'
 for f in "${FILES[@]}"; do
-  # .env templates are safe to publish: skip .env.example and .env.<scope>.example.
+  # Safe to publish: .env templates (.env.example, .env.<scope>.example) and
+  # frontend dev defaults (.env.development), which carry no secrets. Content is
+  # still scanned by gitleaks below, so a real secret in those files is caught.
   case "$(basename "$f")" in
-    .env.example|.env.*.example) continue ;;
+    .env.example|.env.*.example|.env.development) continue ;;
   esac
   if printf '%s' "$f" | grep -Eq "$DENY_RE"; then
     echo "BLOCKED: sensitive file in outgoing commits: $f" >&2
@@ -131,20 +133,24 @@ for f in "${FILES[@]}"; do
   fi
 done
 
-# 2. secret leaks. gitleaks --exit-code 2 separates leaks (2) from tool errors,
-#    so an infrastructure failure warns and continues (fail-open) instead of blocking.
-if command -v gitleaks >/dev/null 2>&1; then
-  GL_OUT="$(gitleaks git -v --no-banner --redact --exit-code 2 --log-opts="${LOCAL_OIDS[*]} --not --remotes" . 2>&1)"; GL_RC=$?
-  if [ "$GL_RC" -eq 2 ]; then
-    printf '%s\n' "$GL_OUT" >&2
-    echo "BLOCKED: gitleaks found secrets in outgoing commits." >&2
-    exit 1
-  elif [ "$GL_RC" -ne 0 ]; then
-    printf '%s\n' "$GL_OUT" >&2
-    echo "WARN: gitleaks failed (rc=$GL_RC) - secret scan skipped (fail-open)" >&2
-  fi
-else
-  echo "WARN: gitleaks not found - secret scan skipped" >&2
+# 2. secret leaks. gitleaks --exit-code 2 separates leaks (2) from tool errors
+#    (anything else). A missing or failing scanner is a hard failure: the
+#    guardrail must never fail open, otherwise a broken toolchain would silently
+#    let secrets through. Bypass explicitly with SKIP_SECURITY=1.
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "BLOCKED: gitleaks not found - cannot scan outgoing commits for secrets (install gitleaks, or bypass with SKIP_SECURITY=1)" >&2
+  exit 1
+fi
+
+GL_OUT="$(gitleaks git -v --no-banner --redact --exit-code 2 --log-opts="${LOCAL_OIDS[*]} --not --remotes" . 2>&1)"; GL_RC=$?
+if [ "$GL_RC" -eq 2 ]; then
+  printf '%s\n' "$GL_OUT" >&2
+  echo "BLOCKED: gitleaks found secrets in outgoing commits." >&2
+  exit 1
+elif [ "$GL_RC" -ne 0 ]; then
+  printf '%s\n' "$GL_OUT" >&2
+  echo "BLOCKED: gitleaks failed (rc=$GL_RC) - cannot scan outgoing commits for secrets (bypass with SKIP_SECURITY=1)" >&2
+  exit 1
 fi
 
 echo "pre-push secret guardrail: OK" >&2
