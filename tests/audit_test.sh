@@ -40,7 +40,7 @@ expect_rc() {
 }
 
 expect_log_contains() {
-  if grep -qF "$1" "$STUB_LOG"; then echo "ok: log contains $1"; else
+  if grep -qF -- "$1" "$STUB_LOG"; then echo "ok: log contains $1"; else
     echo "FAIL: log missing $1"; FAILURES=$((FAILURES + 1)); fi
 }
 
@@ -70,6 +70,7 @@ expect_rc 1 "$rc" "sast blocks when FAIL_ON_SAST=1"
 new_case
 STUB_RC_OSV_SCANNER=1 bash "$AUDIT" sca; rc=$?
 expect_rc 1 "$rc" "sca blocks on findings"
+expect_log_contains "--scanners vuln"
 
 # sca: non-blocking when disabled
 new_case
@@ -85,6 +86,14 @@ expect_rc 0 "$rc" "sca treats osv-scanner rc=128 as informational"
 new_case
 STUB_RC_CHECKOV=1 bash "$AUDIT" iac; rc=$?
 expect_rc 0 "$rc" "iac non-blocking by default"
+
+# iac: passes the checkov config file when it exists
+new_case
+cfg_file="$TMP/checkov-default.yaml"
+printf 'skip-path:\n  - node_modules\n' > "$cfg_file"
+CHECKOV_CONFIG_FILE="$cfg_file" bash "$AUDIT" iac; rc=$?
+expect_rc 0 "$rc" "iac with checkov config exits 0"
+expect_log_contains "--config-file"
 
 # iac: blocking when enabled
 new_case

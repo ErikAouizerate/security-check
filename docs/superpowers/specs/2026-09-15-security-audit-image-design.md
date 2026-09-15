@@ -65,7 +65,7 @@ Multi-stage build:
 
   ghcr.io/gitleaks/gitleaks:v8.30.1     ->  /usr/bin/gitleaks       ─┐
   aquasec/trivy:0.74.0                  ->  /usr/local/bin/trivy     ─┤
-  ghcr.io/google/osv-scanner:v2.6.0     ->  /root/osv-scanner        ─┤
+  ghcr.io/google/osv-scanner:v2.6.0     ->  /osv-scanner             ─┤
                                                                       ├─ COPY
   bridgecrew/checkov:3.3.17  (BASE)     ->  checkov + Python 3.11    ─┤
   opengrep release v1.30.0 (sha256-verified stage) -> /opengrep      ─┘
@@ -98,7 +98,7 @@ glibc base.
 |---|---|---|---|
 | Gitleaks | `ghcr.io/gitleaks/gitleaks` | `/usr/bin/gitleaks` | `v8.30.1` |
 | Trivy | `aquasec/trivy` | `/usr/local/bin/trivy` | `0.74.0` |
-| OSV-Scanner | `ghcr.io/google/osv-scanner` | `/root/osv-scanner` | `v2.6.0` |
+| OSV-Scanner | `ghcr.io/google/osv-scanner` | `/osv-scanner` | `v2.6.0` |
 | Checkov | `bridgecrew/checkov` (base) | in image | `3.3.17` |
 | OpenGrep | GitHub release `opengrep/opengrep` | `opengrep_manylinux_x86` | `v1.30.0` |
 
@@ -116,9 +116,15 @@ project's Cosign `.cert`/`.sig`.)
 
 ### Notes on source paths
 
-- OSV-Scanner v2.6.0 uses `WORKDIR /root/` and `COPY ... .`, so the binary is
-  `/root/osv-scanner` (not `/osv-scanner`; the latter is a known upstream
-  regression, google/osv-scanner#1849).
+- The published `ghcr.io/google/osv-scanner:v2.6.0` image has `WorkingDir=/`
+  and `Entrypoint=["/osv-scanner"]`, so the binary is `/osv-scanner`. This is
+  what the published image actually contains; the project's repository
+  `Dockerfile` at that tag differs (`/root/osv-scanner`), so the image, not the
+  repo Dockerfile, is authoritative.
+- The target platform is pinned at the build invocation
+  (`docker buildx build --platform linux/amd64`; CI `platforms: linux/amd64`)
+  rather than in `FROM` lines, because the OpenGrep asset is x86-64 only and
+  BuildKit discourages a constant `--platform` on `FROM`.
 - Image tags above were verified to exist at design time.
 
 ## Wrapper `audit`

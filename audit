@@ -7,6 +7,7 @@ FAIL_ON_SECRETS="${FAIL_ON_SECRETS:-1}"
 FAIL_ON_SAST="${FAIL_ON_SAST:-0}"
 FAIL_ON_IAC="${FAIL_ON_IAC:-0}"
 FAIL_ON_SCA="${FAIL_ON_SCA:-1}"
+CHECKOV_CONFIG_FILE="${CHECKOV_CONFIG_FILE:-/etc/security-check/checkov.yaml}"
 
 log() { printf '==> %s\n' "$*" >&2; }
 
@@ -51,15 +52,17 @@ run_sast() {
 
 run_iac() {
   log "iac: checkov"
-  checkov -d . --output sarif --output-file-path "$REPORTS_DIR"
+  local cfg_args=()
+  [ -f "$CHECKOV_CONFIG_FILE" ] && cfg_args=(--config-file "$CHECKOV_CONFIG_FILE")
+  checkov -d . "${cfg_args[@]}" --output sarif --output-file-path "$REPORTS_DIR"
   local checkov_rc=$?
   if [ -f "$REPORTS_DIR/results_sarif.sarif" ]; then
     mv -f "$REPORTS_DIR/results_sarif.sarif" "$REPORTS_DIR/checkov.sarif"
   fi
   log "iac: checkov report at $REPORTS_DIR/checkov.sarif"
   log "iac: trivy config"
-  trivy config --format sarif --output "$REPORTS_DIR/trivy-config.sarif" \
-    --exit-code 1 .
+  trivy config --format sarif \
+    --output "$REPORTS_DIR/trivy-config.sarif" --exit-code 1 .
   local trivy_rc=$?
   worst "$checkov_rc" "$trivy_rc"
 }
@@ -74,8 +77,9 @@ run_sca() {
     osv_rc=0
   fi
   log "sca: trivy fs"
-  trivy fs --format sarif --output "$REPORTS_DIR/trivy-fs.sarif" \
-    --exit-code 1 --severity HIGH,CRITICAL .
+  trivy fs --scanners vuln --format sarif \
+    --output "$REPORTS_DIR/trivy-fs.sarif" --exit-code 1 \
+    --severity HIGH,CRITICAL .
   local trivy_rc=$?
   worst "$osv_rc" "$trivy_rc"
 }

@@ -43,6 +43,59 @@ owned by root. Caches (Trivy DB, OpenGrep rules) are persisted in
 make audit IMAGE=ghcr.io/erikaouizerate/security-check:latest
 ```
 
+### Auditing another project
+
+By default `make` audits this repository. Point it at any folder with `TARGET`:
+
+```bash
+make audit TARGET=/path/to/project
+make sast TARGET=/path/to/project   # one category only: secrets|sast|iac|sca
+```
+
+The folder is mounted at `/workspace` and every tool scans the current
+directory, so reports land in `/path/to/project/security-reports/`. Add that
+directory to the target project's `.gitignore`, or use the read-only recipe
+below.
+
+The `secrets` category runs `gitleaks git`, so the target must be a Git
+repository (it scans the history). For a non-Git directory, run Gitleaks in
+directory mode through the wrapper's verbatim passthrough:
+
+```bash
+docker run --rm -u "$(id -u):$(id -g)" \
+  -v "/path/to/tree:/workspace" \
+  -v "$HOME/.cache/security-audit:/cache" \
+  -w /workspace security-check:local \
+  audit gitleaks dir --report-format sarif \
+    --report-path /workspace/security-reports/gitleaks.sarif .
+```
+
+#### Auditing third-party code without modifying it
+
+To keep the scanned folder read-only and write reports outside it, mount the
+target at `/workspace` read-only, add a writable reports mount, and redirect the
+wrapper with `REPORTS_DIR`:
+
+```bash
+TARGET=/path/to/project
+REPORTS="$PWD/reports/$(basename "$TARGET")"
+mkdir -p "$REPORTS" "$HOME/.cache/security-audit"
+
+docker run --rm \
+  -u "$(id -u):$(id -g)" \
+  -v "$TARGET:/workspace:ro" \
+  -v "$REPORTS:/reports" \
+  -v "$HOME/.cache/security-audit:/cache" \
+  -w /workspace \
+  -e REPORTS_DIR=/reports \
+  security-check:local audit all
+```
+
+To change the exit policy for a run, add the matching variable, e.g.
+`-e FAIL_ON_SAST=1` or `-e FAIL_ON_SECRETS=0` (see "Exit policy" below). Use the
+pinned `ghcr.io/erikaouizerate/security-check:latest` image in place of
+`security-check:local` once it is published.
+
 ## Exit policy
 
 | Category | Command | Blocking by default |
@@ -54,6 +107,18 @@ make audit IMAGE=ghcr.io/erikaouizerate/security-check:latest
 
 Override with `FAIL_ON_SECRETS`, `FAIL_ON_SCA`, `FAIL_ON_SAST`, `FAIL_ON_IAC`
 (`1`/`0`).
+
+### Checkov configuration
+
+Every scan runs Checkov with the bundled `.checkov.yaml` (installed at
+`/etc/security-check/checkov.yaml`). It skips generated, vendored and cache
+directories (`node_modules`, `.venv`, `__pycache__`, `.cache`,
+`fastembed_cache`, …) that otherwise trigger false positives such as high-entropy
+strings in model caches. It disables no check, so detection quality is preserved.
+
+Because Checkov is invoked with `--config-file`, a `.checkov.yaml` found in the
+scanned project is ignored. To use your own config, set `CHECKOV_CONFIG_FILE` to
+a path inside the container (mount the file there).
 
 ## CI
 

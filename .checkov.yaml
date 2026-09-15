@@ -1,0 +1,22 @@
+# Checkov configuration used by the audit image for every scan.
+#
+# Only generated, vendored, or cache paths are skipped: they are not sources of
+# truth for IaC/secret findings and mostly produce false positives (e.g. a model
+# cache token that looks like a high-entropy secret). No check is disabled, so
+# detection quality is preserved.
+#
+# Passed explicitly with `--config-file`, which means a `.checkov.yaml` found in
+# the scanned project is ignored. Override the whole file by pointing
+# CHECKOV_CONFIG_FILE at your own config (mounted into the container).
+skip-path:
+  - node_modules
+  - .venv
+  - venv
+  - site-packages
+  - __pycache__
+  - .mypy_cache
+  - .pytest_cache
+  - .ruff_cache
+  - .tox
+  - .cache
+  - fastembed_cache

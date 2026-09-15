@@ -3,11 +3,12 @@ GHCR_IMAGE   ?= ghcr.io/erikaouizerate/security-check:latest
 IMAGE        ?= $(LOCAL_IMAGE)
 REPORTS_DIR  ?= security-reports
 CACHE_DIR    ?= $(HOME)/.cache/security-audit
+TARGET       ?= $(CURDIR)
 
 DOCKER_RUN = docker run --rm \
 	-u "$$(id -u):$$(id -g)" \
 	-e FAIL_ON_SECRETS -e FAIL_ON_SAST -e FAIL_ON_IAC -e FAIL_ON_SCA \
-	-v "$(CURDIR):/workspace" \
+	-v "$(TARGET):/workspace" \
 	-v "$(CACHE_DIR):/cache" \
 	-w /workspace \
 	$(IMAGE)
@@ -22,7 +23,7 @@ $(CACHE_DIR):
 	@mkdir -p $@
 
 build: ## Build the image locally (amd64)
-	docker buildx build --load -t $(LOCAL_IMAGE) -f Dockerfile.security .
+	docker buildx build --platform linux/amd64 --load -t $(LOCAL_IMAGE) -f Dockerfile.security .
 
 pull: ## Pull the pinned image from GHCR
 	docker pull $(GHCR_IMAGE)
@@ -43,5 +44,5 @@ sca: $(CACHE_DIR) ## Run dependency scanning (OSV-Scanner + trivy fs)
 	$(DOCKER_RUN) audit sca
 
 clean: ## Remove reports and the local image
-	rm -rf "$(REPORTS_DIR)"
+	rm -rf "$(TARGET)/$(REPORTS_DIR)"
 	-docker rmi $(LOCAL_IMAGE)
